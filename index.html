@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Executive Dashboard - รายงานผลโครงการธงฟ้าจังหวัดสตูล</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Leaflet CSS & JS for Interactive Map -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Sarabun', 'Inter', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+        }
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        #map-container {
+            position: relative;
+            height: 100%;
+            min-height: 480px;
+            width: 100%;
+            border-radius: 1rem;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        #map {
+            height: 100%;
+            width: 100%;
+            z-index: 10;
+        }
+        /* True Fullscreen Styling */
+        #map-container:fullscreen {
+            width: 100vw;
+            height: 100vh;
+            border-radius: 0;
+            background: #0f172a;
+            padding: 0;
+        }
+        #map-container:-webkit-full-screen {
+            width: 100vw;
+            height: 100vh;
+            border-radius: 0;
+            background: #0f172a;
+            padding: 0;
+        }
+        #map-container:-moz-full-screen {
+            width: 100vw;
+            height: 100vh;
+            border-radius: 0;
+            background: #0f172a;
+            padding: 0;
+        }
+        .leaflet-popup-content-wrapper, .leaflet-popup-tip {
+            background: #1e293b !important;
+            color: #f8fafc !important;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5);
+            border-radius: 0.75rem;
+        }
+        /* Toast Notification Animation */
+        #toast-notification {
+            transition: transform 0.3s ease, opacity 0.3s ease;
+        }
+    </style>
+</head>
+<body class="min-h-screen pb-12">
+
+    <!-- Toast Notification Box -->
+    <div id="toast-notification" class="fixed top-5 right-5 z-[99999] transform translate-y-[-200%] opacity-0 bg-emerald-600 text-white px-4 py-3 rounded-xl shadow-2xl border border-emerald-400/30 flex items-center gap-3 backdrop-blur-md">
+        <div class="p-1 bg-white/20 rounded-lg">
+            <i data-lucide="check-circle-2" class="w-5 h-5 text-white"></i>
+        </div>
+        <div>
+            <h5 class="font-bold text-sm">การทำงานสำเร็จ</h5>
+            <p id="toast-message" class="text-xs text-emerald-100">อัปเดตข้อมูลเรียบร้อยแล้ว</p>
+        </div>
+    </div>
+
+    <!-- Header / Navbar -->
+    <header class="glass-panel sticky top-0 z-50 border-b border-slate-700/50 px-6 py-4 mb-6">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="flex items-center gap-3">
+                <div class="p-2.5 bg-indigo-600/35 rounded-xl border border-indigo-500/30 text-indigo-400">
+                    <i data-lucide="heart-handshake" class="w-7 h-7"></i>
+                </div>
+                <div>
+                    <h1 class="text-2xl font-bold tracking-tight text-white">รายงานผลโครงการธงฟ้าจังหวัดสตูล</h1>
+                    <p class="text-xs text-slate-400">ระบบติดตามการดำเนินงาน ผลการช่วยเหลือประชาชน และลดค่าครองชีพ</p>
+                </div>
+            </div>
+            
+            <!-- Controls & Data Loader -->
+            <div class="flex flex-wrap items-center gap-3">
+                <div class="relative flex items-center">
+                    <input type="file" id="json-file-input" accept=".json" class="hidden" onchange="handleFileSelect(event)" />
+                    <button onclick="document.getElementById('json-file-input').click()" class="bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-xs font-semibold px-3.5 py-2 rounded-xl border border-indigo-400/30 flex items-center gap-2 transition-all shadow-lg shadow-indigo-600/20">
+                        <i data-lucide="folder-open" class="w-4 h-4"></i>
+                        <span>เลือกไฟล์ JSON...</span>
+                    </button>
+                </div>
+
+                <!-- Reset Data Button (100% Clear) -->
+                <button onclick="resetData()" class="bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    <span>ล้างข้อมูล 100%</span>
+                </button>
+
+                <div class="bg-slate-800/80 border border-slate-700 px-3 py-2 rounded-xl text-xs flex items-center gap-2">
+                    <i data-lucide="file-json" class="w-4 h-4 text-amber-400"></i>
+                    <span class="text-slate-400">ข้อมูล: <span id="current-filename" class="text-white font-medium">ยังไม่ได้โหลดข้อมูล</span></span>
+                </div>
+
+                <button onclick="window.print()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-3 py-2 rounded-xl text-xs font-medium flex items-center gap-1.5 transition-all">
+                    <i data-lucide="printer" class="w-4 h-4"></i>
+                    พิมพ์
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 space-y-8">
+
+        <!-- EXECUTIVE KPI SUMMARY CARDS -->
+        <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            <!-- 1. Total Points -->
+            <div class="glass-panel p-4 rounded-2xl border-l-4 border-l-indigo-500">
+                <p class="text-[11px] font-medium uppercase tracking-wider text-slate-400 mb-1">จุดจำหน่ายเป้าหมาย</p>
+                <div class="flex items-center justify-between">
+                    <h3 class="text-2xl font-extrabold text-white" id="kpi-total-sp">0</h3>
+                    <div class="p-2 bg-indigo-500/10 text-indigo-400 rounded-lg">
+                        <i data-lucide="map-pin" class="w-5 h-5"></i>
+                    </div>
+                </div>
+                <p class="text-[10px] text-slate-400 mt-1">แล้วเสร็จ <span id="kpi-completed-sp" class="text-emerald-400 font-bold">0</span> จุด (<span id="kpi-completed-pct" class="text-emerald-400">0%</span>)</p>
+            </div>
+
+            <!-- 2. Market Value -->
+            <div class="glass-panel p-4 rounded-2xl border-l-4 border-l-slate-400">
+                <p class="text-[11px] font-medium uppercase tracking-wider text-slate-400 mb-1">มูลค่าราคาตลาดรวม</p>
+                <div class="flex items-center justify-between">
+                    <h3 class="text-xl font-bold text-slate-200"><span id="kpi-total-market">0</span> <span class="text-xs text-slate-400">บ.</span></h3>
+                    <div class="p-2 bg-slate-500/10 text-slate-400 rounded-lg">
+                        <i data-lucide="shopping-bag" class="w-5 h-5"></i>
+                    </div>
+                </div>
+                <p class="text-[10px] text-slate-400 mt-1">ประเมินจากราคาตลาดทั่วไป</p>
+            </div>
+
+            <!-- 3. Sales Value (Thongfa) -->
+            <div class="glass-panel p-4 rounded-2xl border-l-4 border-l-sky-500">
+                <p class="text-[11px] font-medium uppercase tracking-wider text-sky-400 mb-1">มูลค่าจำหน่าย (ธงฟ้า)</p>
+                <div class="flex items-center justify-between">
+                    <h3 class="text-xl font-bold text-sky-300"><span id="kpi-total-sales">0</span> <span class="text-xs text-slate-400">บ.</span></h3>
+                    <div class="p-2 bg-sky-500/10 text-sky-400 rounded-lg">
+                        <i data-lucide="banknote" class="w-5 h-5"></i>
+                    </div>
+                </div>
+                <p class="text-[10px] text-slate-400 mt-1">ยอดขายสินค้าราคาพิเศษ</p>
+            </div>
+
+            <!-- 4. Cost Living Relief (HIGHLIGHT KPI) -->
+            <div class="glass-panel p-4 rounded-2xl border-l-4 border-l-emerald-500 bg-emerald-950/20">
+                <p class="text-[11px] font-medium uppercase tracking-wider text-emerald-400 mb-1">ลดค่าครองชีพประชาชน</p>
+                <div class="flex items-center justify-between">
+                    <h3 class="text-2xl font-extrabold text-emerald-400"><span id="kpi-total-relief">0</span> <span class="text-xs text-emerald-500">บ.</span></h3>
+                    <div class="p-2 bg-emerald-500/20 text-emerald-400 rounded-lg">
+                        <i data-lucide="heart" class="w-5 h-5"></i>
+                    </div>
+                </div>
+                <p class="text-[10px] text-emerald-300/80 mt-1">เงินประหยัดรวมของประชาชน</p>
+            </div>
+
+            <!-- 5. Total Compensation Price -->
+            <div class="glass-panel p-4 rounded-2xl border-l-4 border-l-amber-500">
+                <p class="text-[11px] font-medium uppercase tracking-wider text-amber-400 mb-1">งบชดเชยส่วนต่างราคา</p>
+                <div class="flex items-center justify-between">
+                    <h3 class="text-xl font-bold text-amber-300"><span id="kpi-total-compensation">0</span> <span class="text-xs text-slate-400">บ.</span></h3>
+                    <div class="p-2 bg-amber-500/10 text-amber-400 rounded-lg">
+                        <i data-lucide="coins" class="w-5 h-5"></i>
+                    </div>
+                </div>
+                <p class="text-[10px] text-slate-400 mt-1">ชดเชยต้นทุนผู้ประกอบการ</p>
+            </div>
+        </section>
+
+        <!-- MAP & STATUS BREAKDOWN SECTION -->
+        <section class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            <!-- Interactive Map Panel (8 Cols) -->
+            <div class="glass-panel p-5 rounded-2xl lg:col-span-8 flex flex-col justify-between">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4">
+                    <div>
+                        <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                            <i data-lucide="map" class="w-5 h-5 text-indigo-400"></i>
+                            แผนที่จุดจำหน่ายและการช่วยเหลือประชาชน
+                        </h2>
+                        <p class="text-xs text-slate-400">คลิกหมุดเพื่อดูยอดจำหน่าย สินค้า และมูลค่าลดค่าครองชีพรายจุด</p>
+                    </div>
+                    <div class="flex items-center gap-3 text-xs bg-slate-900/60 px-3 py-1.5 rounded-lg border border-slate-800">
+                        <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-emerald-500 shadow shadow-emerald-500/50"></span> ดำเนินการแล้ว</span>
+                        <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-amber-500 shadow shadow-amber-500/50"></span> ยังไม่ดำเนินการ</span>
+                    </div>
+                </div>
+
+                <!-- Map Container with True Fullscreen API Button -->
+                <div id="map-container">
+                    <button onclick="toggleMapFullscreen()" id="fullscreen-btn" class="absolute top-3 right-3 z-[1000] bg-slate-900/90 hover:bg-slate-800 text-white px-3 py-2 rounded-xl border border-slate-700 shadow-xl flex items-center gap-1.5 text-xs font-semibold transition-all backdrop-blur-md">
+                        <i data-lucide="maximize" id="fullscreen-icon" class="w-4 h-4"></i>
+                        <span id="fullscreen-text">ขยายเต็มจอ</span>
+                    </button>
+                    <div id="map"></div>
+                </div>
+            </div>
+
+            <!-- Side Charts (4 Cols) -->
+            <div class="glass-panel p-5 rounded-2xl lg:col-span-4 flex flex-col justify-between space-y-6">
+                <div>
+                    <h2 class="text-base font-bold text-white mb-1 flex items-center gap-2">
+                        <i data-lucide="pie-chart" class="w-4 h-4 text-indigo-400"></i>
+                        สถานะการดำเนินงานภาพรวม
+                    </h2>
+                    <div class="relative h-[170px] my-2">
+                        <canvas id="statusChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="pt-4 border-t border-slate-700/50">
+                    <h2 class="text-base font-bold text-white mb-1 flex items-center gap-2">
+                        <i data-lucide="package-check" class="w-4 h-4 text-emerald-400"></i>
+                        ปริมาณจำหน่ายสินค้าสะสม (หน่วย)
+                    </h2>
+                    <div class="relative h-[160px] my-2">
+                        <canvas id="productQtyChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- COMBINED ANALYTICS CHART SECTION: SALES & COST OF LIVING RELIEF ON THE SAME CHART -->
+        <section class="glass-panel p-5 rounded-2xl">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+                <div>
+                    <h3 class="text-base font-bold text-white flex items-center gap-2">
+                        <i data-lucide="bar-chart-3" class="w-5 h-5 text-indigo-400"></i>
+                        กราฟเปรียบเทียบ มูลค่าจำหน่าย และ มูลค่าลดค่าครองชีพประชาชน (รายจุดจำหน่าย)
+                    </h3>
+                    <p class="text-xs text-slate-400">แสดงยอดขาย (แท่ง) ควบคู่กับมูลค่าการช่วยเหลือลดค่าครองชีพ (เส้น) บนกราฟเดียวกัน</p>
+                </div>
+                <div class="flex items-center gap-4 text-xs bg-slate-900/60 px-3 py-1.5 rounded-lg border border-slate-800">
+                    <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-sky-400"></span> มูลค่าจำหน่าย (บาท)</span>
+                    <span class="flex items-center gap-1.5"><span class="w-3 h-1 bg-emerald-400 rounded-full"></span> ลดค่าครองชีพ (บาท)</span>
+                </div>
+            </div>
+            <div class="relative h-[320px]">
+                <canvas id="combinedSalesReliefChart"></canvas>
+            </div>
+        </section>
+
+        <!-- DETAILED TABLE SECTION -->
+        <section class="glass-panel p-5 rounded-2xl">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+                <div>
+                    <h4 class="text-base font-bold text-white flex items-center gap-2">
+                        <i data-lucide="table" class="w-5 h-5 text-indigo-400"></i>
+                        ตารางสรุปการช่วยเหลือประชาชน และมูลค่าทางเศรษฐกิจรายจุด
+                    </h4>
+                    <p class="text-xs text-slate-400">แสดงราคาชดเชย มูลค่าจำหน่าย มูลค่าตลาด และมูลค่าลดค่าครองชีพประชาชน</p>
+                </div>
+                <!-- Filter Buttons -->
+                <div class="flex items-center gap-2 bg-slate-900/60 p-1 rounded-xl border border-slate-800 text-xs">
+                    <button onclick="filterTable('all')" id="btn-filter-all" class="px-3 py-1.5 rounded-lg font-medium text-white bg-indigo-600 transition-all">ทั้งหมด</button>
+                    <button onclick="filterTable('ดำเนินการแล้ว')" id="btn-filter-completed" class="px-3 py-1.5 rounded-lg font-medium text-slate-400 hover:text-white transition-all">ดำเนินการแล้ว</button>
+                    <button onclick="filterTable('ยังไม่ดำเนินการ')" id="btn-filter-pending" class="px-3 py-1.5 rounded-lg font-medium text-slate-400 hover:text-white transition-all">ยังไม่ดำเนินการ</button>
+                </div>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs text-slate-300">
+                    <thead class="bg-slate-800/90 uppercase text-slate-400 border-b border-slate-700/50">
+                        <tr>
+                            <th class="py-3 px-3">จุดจำหน่าย / สถานที่</th>
+                            <th class="py-3 px-3">วัน-เวลา</th>
+                            <th class="py-3 px-3 text-center">สถานะ</th>
+                            <th class="py-3 px-3 text-right">มูลค่าตลาด (บาท)</th>
+                            <th class="py-3 px-3 text-right text-sky-300">มูลค่าจำหน่าย (บาท)</th>
+                            <th class="py-3 px-3 text-right text-emerald-400">ลดค่าครองชีพ (บาท)</th>
+                            <th class="py-3 px-3 text-right text-emerald-300">ลดค่าครองชีพ (%)</th>
+                            <th class="py-3 px-3 text-right text-amber-300">ราคาชดเชย (บาท)</th>
+                            <th class="py-3 px-3 text-center">ปักหมุด</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sp-table-body" class="divide-y divide-slate-700/30">
+                        <!-- JS Inject Table Rows -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="max-w-7xl mx-auto px-6 text-center text-xs text-slate-500 mt-12">
+        <p>© 2026 Executive Progress Dashboard | ระบบติดตามผลการดำเนินงานโครงการธงฟ้าจังหวัดสตูล</p>
+    </footer>
+
+    <!-- Logic Script -->
+    <script>
+        let appData = {
+          "sellingPoints": [],
+          "masterProducts": [],
+          "sessions": []
+        };
+
+        let map = null;
+        let markersGroup = null;
+        let statusChartInstance = null;
+        let productQtyChartInstance = null;
+        let combinedChartInstance = null;
+        let currentFilter = 'all';
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initMap();
+            renderDashboard(appData);
+            lucide.createIcons();
+
+            document.addEventListener("fullscreenchange", updateFullscreenButtonUI);
+            document.addEventListener("webkitfullscreenchange", updateFullscreenButtonUI);
+            document.addEventListener("mozfullscreenchange", updateFullscreenButtonUI);
+        });
+
+        function initMap() {
+            map = L.map('map').setView([6.8000, 99.8000], 10);
+            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                attribution: 'Tiles &copy; Esri', maxZoom: 19
+            }).addTo(map);
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; CARTO', subdomains: 'abcd', maxZoom: 19
+            }).addTo(map);
+            markersGroup = L.layerGroup().addTo(map);
+        }
+
+        function showToast(message, isError = false) {
+            const toast = document.getElementById('toast-notification');
+            const msgEl = document.getElementById('toast-message');
+            msgEl.textContent = message;
+
+            if (isError) {
+                toast.className = toast.className.replace('bg-emerald-600', 'bg-rose-600');
+            } else {
+                toast.className = toast.className.replace('bg-rose-600', 'bg-emerald-600');
+            }
+
+            toast.style.transform = 'translateY(0)';
+            toast.style.opacity = '1';
+
+            setTimeout(() => {
+                toast.style.transform = 'translateY(-200%)';
+                toast.style.opacity = '0';
+            }, 3500);
+        }
+
+        function toggleMapFullscreen() {
+            const container = document.getElementById('map-container');
+            
+            if (!document.fullscreenElement && !document.webkitFullscreenElement && !document.mozFullScreenElement) {
+                if (container.requestFullscreen) {
+                    container.requestFullscreen();
+                } else if (container.webkitRequestFullscreen) {
+                    container.webkitRequestFullscreen();
+                } else if (container.mozRequestFullScreen) {
+                    container.mozRequestFullScreen();
+                }
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                } else if (document.webkitExitFullscreen) {
+                    document.webkitExitFullscreen();
+                } else if (document.mozCancelFullScreen) {
+                    document.mozCancelFullScreen();
+                }
+            }
+        }
+
+        function updateFullscreenButtonUI() {
+            const icon = document.getElementById('fullscreen-icon');
+            const text = document.getElementById('fullscreen-text');
+            const isisFullscreen = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement;
+
+            if (isFullscreen) {
+                icon.setAttribute('data-lucide', 'minimize');
+                text.textContent = 'ย่อหน้าจอ';
+            } else {
+                icon.setAttribute('data-lucide', 'maximize');
+                text.textContent = 'ขยายเต็มจอ';
+            }
+            lucide.createIcons();
+            setTimeout(() => { map.invalidateSize(); }, 200);
+        }
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const parsedData = JSON.parse(e.target.result);
+                    if (parsedData.sellingPoints) {
+                        appData = parsedData;
+                        document.getElementById('current-filename').textContent = file.name;
+                        renderDashboard(appData);
+                        showToast(`ซิงก์ข้อมูลจากไฟล์ "${file.name}" เรียบร้อยแล้ว`);
+                    } else {
+                        showToast('รูปแบบไฟล์ JSON ไม่ถูกต้อง (ไม่พบข้อมูลจุดจำหน่าย)', true);
+                    }
+                } catch (err) {
+                    showToast('เกิดข้อผิดพลาดในการอ่านไฟล์ JSON: ' + err.message, true);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function resetData() {
+            if (confirm('คุณต้องการล้างข้อมูลในระบบออกทั้งหมด 100% ใช่หรือไม่?')) {
+                appData = {
+                    "sellingPoints": [],
+                    "masterProducts": [],
+                    "sessions": []
+                };
+                document.getElementById('current-filename').textContent = 'ยังไม่ได้โหลดข้อมูล';
+                document.getElementById('json-file-input').value = '';
+                renderDashboard(appData);
+                showToast('ล้างข้อมูลออกจากระบบ 100% เรียบร้อยแล้ว', true);
+            }
+        }
+
+        // Calculation Core for Financials & Relief Percentage
+        function calculatePointFinancials(spId) {
+            let res = {
+                totalSales: 0,        
+                totalMarketValue: 0,   
+                reliefValue: 0,        
+                compensationValue: 0,
+                reliefPercentage: '0.00',
+                productDetails: []
+            };
+
+            if (!appData.sessions || !appData.masterProducts) return res;
+            const session = appData.sessions.find(s => s.sellingPointId === spId);
+            if (!session || !session.salesQuantities) return res;
+
+            appData.masterProducts.forEach(prod => {
+                const qty = parseFloat(session.salesQuantities[prod.id] || session.salesQuantities[String(prod.id)] || 0);
+                if (qty > 0) {
+                    const sales = qty * (prod.thongfaPrice || 0);
+                    const market = qty * (prod.marketPrice || 0);
+                    const relief = market - sales;
+                    const comp = qty * ((prod.costPrice || 0) - (prod.thongfaPrice || 0));
+
+                    res.totalSales += sales;
+                    res.totalMarketValue += market;
+                    res.reliefValue += relief;
+                    res.compensationValue += comp;
+                }
+            });
+
+            if (res.totalMarketValue > 0) {
+                res.reliefPercentage = ((res.reliefValue / res.totalMarketValue) * 100).toFixed(2);
+            }
+
+            return res;
+        }
+
+        function renderDashboard(data) {
+            renderKPIs(data);
+            renderMapMarkers(data);
+            renderCharts(data);
+            renderTable(data);
+            lucide.createIcons();
+        }
+
+        function renderKPIs(data) {
+            const totalSP = data.sellingPoints ? data.sellingPoints.length : 0;
+            const completedSP = data.sellingPoints ? data.sellingPoints.filter(sp => sp.status === "ดำเนินการแล้ว").length : 0;
+            const completedPct = totalSP > 0 ? Math.round((completedSP / totalSP) * 100) : 0;
+
+            let sumMarket = 0;
+            let sumSales = 0;
+            let sumRelief = 0;
+            let sumComp = 0;
+
+            if (data.sellingPoints) {
+                data.sellingPoints.forEach(sp => {
+                    const fin = calculatePointFinancials(sp.id);
+                    sumMarket += fin.totalMarketValue;
+                    sumSales += fin.totalSales;
+                    sumRelief += fin.reliefValue;
+                    sumComp += fin.compensationValue;
+                });
+            }
+
+            document.getElementById('kpi-total-sp').textContent = totalSP;
+            document.getElementById('kpi-completed-sp').textContent = completedSP;
+            document.getElementById('kpi-completed-pct').textContent = `${completedPct}%`;
+            document.getElementById('kpi-total-market').textContent = sumMarket.toLocaleString();
+            document.getElementById('kpi-total-sales').textContent = sumSales.toLocaleString();
+            document.getElementById('kpi-total-relief').textContent = sumRelief.toLocaleString();
+            document.getElementById('kpi-total-compensation').textContent = sumComp.toLocaleString();
+        }
+
+        function renderMapMarkers(data) {
+            markersGroup.clearLayers();
+            const bounds = [];
+
+            if (!data.sellingPoints) return;
+
+            data.sellingPoints.forEach(sp => {
+                if (sp.lat && sp.lng) {
+                    const isCompleted = sp.status === "ดำเนินการแล้ว";
+                    const fin = calculatePointFinancials(sp.id);
+
+                    const marker = L.circleMarker([sp.lat, sp.lng], {
+                        radius: 11,
+                        fillColor: isCompleted ? '#10b981' : '#f59e0b',
+                        color: '#ffffff',
+                        weight: 3,
+                        fillOpacity: 0.95
+                    });
+
+                    const formattedDate = sp.datetime ? new Date(sp.datetime).toLocaleDateString('th-TH', { 
+                        year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+                    }) : '-';
+
+                    const gmapUrl = `https://www.google.com/maps/search/?api=1&query=${sp.lat},${sp.lng}`;
+
+                    marker.bindPopup(`
+                        <div class="p-1.5 min-w-[220px]">
+                            <span class="px-2 py-0.5 rounded text-[10px] font-bold ${isCompleted ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}">
+                                ${sp.status}
+                            </span>
+                            <h4 class="font-bold text-sm text-white mt-1.5 mb-1">${sp.name}</h4>
+                            <p class="text-[11px] text-slate-400 mb-2">กำหนดการ: ${formattedDate} น.</p>
+                            
+                            <div class="bg-slate-900/80 p-2.5 rounded-lg border border-slate-700/80 space-y-1 mb-2">
+                                <div class="flex justify-between text-[11px]"><span class="text-slate-400">มูลค่าตลาด:</span> <span class="text-slate-300 font-mono">฿${fin.totalMarketValue.toLocaleString()}</span></div>
+                                <div class="flex justify-between text-[11px]"><span class="text-sky-400 font-medium">มูลค่าจำหน่าย:</span> <span class="text-sky-300 font-mono font-bold">฿${fin.totalSales.toLocaleString()}</span></div>
+                                <div class="flex justify-between text-[11px]"><span class="text-emerald-400 font-medium">ลดค่าครองชีพ:</span> <span class="text-emerald-400 font-mono font-bold">฿${fin.reliefValue.toLocaleString()} (${fin.reliefPercentage}%)</span></div>
+                                <div class="flex justify-between text-[11px]"><span class="text-amber-400">ราคาชดเชย:</span> <span class="text-amber-300 font-mono">฿${fin.compensationValue.toLocaleString()}</span></div>
+                            </div>
+
+                            <a href="${gmapUrl}" target="_blank" rel="noopener noreferrer" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold py-1.5 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-all text-center">
+                                <span>เปิดบน Google Maps</span>
+                            </a>
+                        </div>
+                    `);
+
+                    markersGroup.addLayer(marker);
+                    bounds.push([sp.lat, sp.lng]);
+                }
+            });
+
+            if (bounds.length > 0) {
+                map.fitBounds(bounds, { padding: [50, 50], maxZoom: 13 });
+            }
+        }
+
+        function renderCharts(data) {
+            const completed = data.sellingPoints ? data.sellingPoints.filter(sp => sp.status === "ดำเนินการแล้ว").length : 0;
+            const total = data.sellingPoints ? data.sellingPoints.length : 0;
+            const pending = total - completed;
+
+            if (statusChartInstance) statusChartInstance.destroy();
+            statusChartInstance = new Chart(document.getElementById('statusChart').getContext('2d'), {
+                type: 'doughnut',
+                data: {
+                    labels: ['ดำเนินการแล้ว', 'ยังไม่ดำเนินการ'],
+                    datasets: [{ data: [completed, pending], backgroundColor: ['#10b981', '#f59e0b'], borderColor: '#1e293b', borderWidth: 3 }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: '#f8fafc', font: { family: 'Sarabun', size: 10 } } } }, cutout: '65%' }
+            });
+
+            let productTotals = {};
+            if (data.masterProducts) {
+                data.masterProducts.forEach(p => productTotals[p.name] = 0);
+                if (data.sessions) {
+                    data.sessions.forEach(s => {
+                        if (s.salesQuantities) {
+                            for (let [pId, qty] of Object.entries(s.salesQuantities)) {
+                                const prod = data.masterProducts.find(p => String(p.id) === String(pId));
+                                if (prod) productTotals[prod.name] += (parseFloat(qty) || 0);
+                            }
+                        }
+                    });
+                }
+            }
+            if (productQtyChartInstance) productQtyChartInstance.destroy();
+            productQtyChartInstance = new Chart(document.getElementById('productQtyChart').getContext('2d'), {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(productTotals),
+                    datasets: [{ data: Object.values(productTotals), backgroundColor: ['#38bdf8', '#818cf8', '#34d399'], borderRadius: 6 }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+                    scales: { x: { ticks: { color: '#94a3b8', font: { family: 'Sarabun', size: 10 } }, grid: { display: false } }, y: { ticks: { color: '#94a3b8', font: { family: 'Sarabun', size: 10 } }, grid: { color: 'rgba(255,255,255,0.05)' } } }
+                }
+            });
+
+            const spCompletedList = data.sellingPoints ? data.sellingPoints.filter(sp => sp.status === "ดำเนินการแล้ว") : [];
+            const spShortNames = spCompletedList.map(sp => sp.name.replace("จุดจำหน่าย", "").substring(0, 15) + "...");
+            const spSalesValues = spCompletedList.map(sp => calculatePointFinancials(sp.id).totalSales);
+            const spReliefValues = spCompletedList.map(sp => calculatePointFinancials(sp.id).reliefValue);
+
+            if (combinedChartInstance) combinedChartInstance.destroy();
+            combinedChartInstance = new Chart(document.getElementById('combinedSalesReliefChart').getContext('2d'), {
+                type: 'bar',
+                data: {
+                    labels: spShortNames.length > 0 ? spShortNames : ['ไม่มีข้อมูล'],
+                    datasets: [
+                        {
+                            type: 'bar',
+                            label: 'มูลค่าจำหน่าย (บาท)',
+                            data: spSalesValues.length > 0 ? spSalesValues : [0],
+                            backgroundColor: 'rgba(56, 189, 248, 0.75)',
+                            borderColor: '#38bdf8',
+                            borderWidth: 1,
+                            borderRadius: 6,
+                            order: 2
+                        },
+                        {
+                            type: 'line',
+                            label: 'ลดค่าครองชีพประชาชน (บาท)',
+                            data: spReliefValues.length > 0 ? spReliefValues : [0],
+                            borderColor: '#34d399',
+                            backgroundColor: '#34d399',
+                            borderWidth: 3,
+                            fill: false,
+                            tension: 0.3,
+                            pointBackgroundColor: '#10b981',
+                            pointRadius: 5,
+                            order: 1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: { color: '#f8fafc', font: { family: 'Sarabun', size: 11 }, padding: 15 }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: { color: '#94a3b8', font: { family: 'Sarabun', size: 11 } },
+                            grid: { display: false }
+                        },
+                        y: {
+                            ticks: { color: '#94a3b8', font: { family: 'Sarabun', size: 11 } },
+                            grid: { color: 'rgba(255,255,255,0.05)' }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderTable(data) {
+            const tbody = document.getElementById('sp-table-body');
+            tbody.innerHTML = '';
+
+            if (!data.sellingPoints || data.sellingPoints.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center py-6 text-slate-500 text-xs">ไม่พบข้อมูลในระบบ (กรุณาเลือกไฟล์ JSON เพื่อโหลดข้อมูล)</td></tr>';
+                return;
+            }
+
+            const filteredPoints = data.sellingPoints.filter(sp => {
+                if (currentFilter === 'all') return true;
+                return sp.status === currentFilter;
+            });
+
+            if (filteredPoints.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center py-6 text-slate-500 text-xs">ไม่พบข้อมูลตามเงื่อนไขที่เลือก</td></tr>';
+                return;
+            }
+
+            filteredPoints.forEach(sp => {
+                const fin = calculatePointFinancials(sp.id);
+                const dateObj = sp.datetime ? new Date(sp.datetime) : null;
+                const formattedDate = dateObj ? dateObj.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }) : '-';
+                const formattedTime = dateObj ? dateObj.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : '';
+                const isCompleted = sp.status === "ดำเนินการแล้ว";
+
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-800/40 transition-colors";
+                tr.innerHTML = `
+                    <td class="py-3 px-3 font-semibold text-white">${sp.name}</td>
+                    <td class="py-3 px-3 text-slate-300">${formattedDate} ${formattedTime ? '(' + formattedTime + ' น.)' : ''}</td>
+                    <td class="py-3 px-3 text-center">
+                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${isCompleted ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/10 text-amber-400 border border-amber-500/30'}">
+                            ${sp.status}
+                        </span>
+                    </td>
+                    <td class="py-3 px-3 text-right font-mono text-slate-300">${fin.totalMarketValue > 0 ? '฿' + fin.totalMarketValue.toLocaleString() : '-'}</td>
+                    <td class="py-3 px-3 text-right font-mono font-bold text-sky-300">${fin.totalSales > 0 ? '฿' + fin.totalSales.toLocaleString() : '-'}</td>
+                    <td class="py-3 px-3 text-right font-mono font-bold text-emerald-400">${fin.reliefValue > 0 ? '฿' + fin.reliefValue.toLocaleString() : '-'}</td>
+                    <td class="py-3 px-3 text-right font-mono font-bold text-emerald-300">${fin.totalMarketValue > 0 ? fin.reliefPercentage + '%' : '-'}</td>
+                    <td class="py-3 px-3 text-right font-mono text-amber-300">${fin.compensationValue > 0 ? '฿' + fin.compensationValue.toLocaleString() : '-'}</td>
+                    <td class="py-3 px-3 text-center">
+                        <button onclick="zoomToPoint(${sp.lat}, ${sp.lng})" class="px-2 py-1 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-500/30 rounded text-[10px] inline-flex items-center gap-1 transition-all">
+                            <i data-lucide="crosshair" class="w-3 h-3"></i> ปักหมุด
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+            lucide.createIcons();
+        }
+
+        function filterTable(status) {
+            currentFilter = status;
+            const btnAll = document.getElementById('btn-filter-all');
+            const btnCompleted = document.getElementById('btn-filter-completed');
+            const btnPending = document.getElementById('btn-filter-pending');
+
+            [btnAll, btnCompleted, btnPending].forEach(btn => {
+                btn.className = "px-3 py-1.5 rounded-lg font-medium text-slate-400 hover:text-white transition-all";
+            });
+
+            if (status === 'all') btnAll.className = "px-3 py-1.5 rounded-lg font-medium text-white bg-indigo-600 transition-all";
+            if (status === 'ดำเนินการแล้ว') btnCompleted.className = "px-3 py-1.5 rounded-lg font-medium text-white bg-emerald-600 transition-all";
+            if (status === 'ยังไม่ดำเนินการ') btnPending.className = "px-3 py-1.5 rounded-lg font-medium text-white bg-amber-600 transition-all";
+
+            renderTable(appData);
+        }
+
+        function zoomToPoint(lat, lng, event) {
+            if (lat && lng && map) {
+                map.setView([lat, lng], 15);
+            }
+        }
+    </script>
+</body>
+</html>
